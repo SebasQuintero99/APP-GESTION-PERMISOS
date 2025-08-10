@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  # Base de datos PostgreSQL
+  postgres:
+    image: postgres:15-alpine
+    container_name: approval_db
+    environment:
+      POSTGRES_DB: approval_system
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - approval_network
+
+  # Redis para caché y sesiones
+  redis:
+    image: redis:7-alpine
+    container_name: approval_redis
+    ports:
+      - "6379:6379"
+    networks:
+      - approval_network
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: approval_backend
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://admin:password123@postgres:5432/approval_system
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=your_jwt_secret_here
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    networks:
+      - approval_network
+
+  # Frontend React
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: approval_frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:3001
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - approval_network
+
+volumes:
+  postgres_data:
+
+networks:
+  approval_network:
+    driver: bridge
