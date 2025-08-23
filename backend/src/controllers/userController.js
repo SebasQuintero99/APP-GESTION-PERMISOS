@@ -245,6 +245,73 @@ const deleteUser = async (req, res) => {
   }
 };
 
+const getUserById = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const user = await User.findByPk(userId, {
+      attributes: { exclude: ['password'] },
+      include: [
+        {
+          model: User,
+          as: 'immediateManager',
+          attributes: ['id', 'firstName', 'lastName', 'email', 'role']
+        },
+        {
+          model: User,
+          as: 'areaManager',
+          attributes: ['id', 'firstName', 'lastName', 'email', 'role']
+        },
+        {
+          model: User,
+          as: 'subordinates',
+          attributes: ['id', 'firstName', 'lastName', 'email', 'role']
+        },
+        {
+          model: User,
+          as: 'areaSubordinates',
+          attributes: ['id', 'firstName', 'lastName', 'email', 'role']
+        }
+      ]
+    });
+
+    if (!user) {
+      return res.status(404).json({ 
+        error: 'Usuario no encontrado' 
+      });
+    }
+
+    res.json({ user });
+
+  } catch (error) {
+    console.error('Error obteniendo usuario:', error);
+    res.status(500).json({ 
+      error: 'Error interno del servidor' 
+    });
+  }
+};
+
+const getManagers = async (req, res) => {
+  try {
+    const managers = await User.findAll({
+      where: {
+        role: { [Op.in]: ['immediate_supervisor', 'area_manager', 'hr'] },
+        isActive: true
+      },
+      attributes: ['id', 'firstName', 'lastName', 'email', 'role', 'department'],
+      order: [['firstName', 'ASC']]
+    });
+
+    res.json({ managers });
+
+  } catch (error) {
+    console.error('Error obteniendo managers:', error);
+    res.status(500).json({ 
+      error: 'Error interno del servidor' 
+    });
+  }
+};
+
 const updateSignature = async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -271,10 +338,46 @@ const updateSignature = async (req, res) => {
   }
 };
 
+const resetPassword = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { newPassword } = req.body;
+
+    // Solo HR puede resetear contraseñas
+    if (req.user.role !== 'hr') {
+      return res.status(403).json({ 
+        error: 'Solo HR puede resetear contraseñas' 
+      });
+    }
+
+    const user = await User.findByPk(userId);
+    if (!user) {
+      return res.status(404).json({ 
+        error: 'Usuario no encontrado' 
+      });
+    }
+
+    await user.update({ password: newPassword });
+
+    res.json({
+      message: 'Contraseña restablecida exitosamente'
+    });
+
+  } catch (error) {
+    console.error('Error restableciendo contraseña:', error);
+    res.status(500).json({ 
+      error: 'Error interno del servidor' 
+    });
+  }
+};
+
 module.exports = {
   createUser,
   getUsers,
+  getUserById,
+  getManagers,
   updateUser,
   deleteUser,
-  updateSignature
+  updateSignature,
+  resetPassword
 };

@@ -325,9 +325,304 @@ const approveOrRejectPermission = async (req, res) => {
   }
 };
 
+const getAllPermissions = async (req, res) => {
+  try {
+    const { 
+      page = 1, 
+      limit = 10, 
+      status, 
+      type, 
+      department,
+      employeeId,
+      startDate,
+      endDate
+    } = req.query;
+    
+    const offset = (page - 1) * limit;
+    let whereClause = {};
+    let employeeWhereClause = {};
+
+    // Filtros para permisos
+    if (status) whereClause.status = status;
+    if (type) whereClause.type = type;
+    if (startDate && endDate) {
+      whereClause.startDate = { [Op.between]: [startDate, endDate] };
+    }
+
+    // Filtros para empleados
+    if (department) employeeWhereClause.department = department;
+    if (employeeId) employeeWhereClause.employeeId = employeeId;
+
+    const permissions = await Permission.findAndCountAll({
+      where: whereClause,
+      include: [
+        {
+          model: User,
+          as: 'employee',
+          where: Object.keys(employeeWhereClause).length > 0 ? employeeWhereClause : undefined,
+          attributes: ['id', 'firstName', 'lastName', 'email', 'employeeId', 'department']
+        },
+        {
+          model: Approval,
+          as: 'approvals',
+          include: [
+            {
+              model: User,
+              as: 'approver',
+              attributes: ['id', 'firstName', 'lastName', 'role']
+            }
+          ]
+        }
+      ],
+      order: [['createdAt', 'DESC']],
+      limit: parseInt(limit),
+      offset: parseInt(offset)
+    });
+
+    res.json({
+      permissions: permissions.rows,
+      pagination: {
+        total: permissions.count,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(permissions.count / limit)
+      }
+    });
+
+  } catch (error) {
+    console.error('Error obteniendo todos los permisos:', error);
+    res.status(500).json({ 
+      error: 'Error interno del servidor' 
+    });
+  }
+};
+
+const getPermissionById = async (req, res) => {
+  try {
+    const { permissionId } = req.params;
+
+    const permission = await Permission.findByPk(permissionId, {
+      include: [
+        {
+          model: User,
+          as: 'employee',
+          attributes: ['id', 'firstName', 'lastName', 'email', 'employeeId', 'department', 'position'],
+          include: [
+            {
+              model: User,
+              as: 'immediateManager',
+              attributes: ['id', 'firstName', 'lastName', 'email']
+            },
+            {
+              model: User,
+              as: 'areaManager',
+              attributes: ['id', 'firstName', 'lastName', 'email']
+            }
+          ]
+        },
+        {
+          model: Approval,
+          as: 'approvals',
+          include: [
+            {
+              model: User,
+              as: 'approver',
+              attributes: ['id', 'firstName', 'lastName', 'role', 'email']
+            }
+          ],
+          order: [['createdAt', 'ASC']]
+        }
+      ]
+    });
+
+    if (!permission) {
+      return res.status(404).json({ 
+        error: 'Permiso no encontrado' 
+      });
+    }
+
+    // Verificar permisos de acceso
+    const canView = req.user.role === 'hr' || 
+                   req.user.role === 'area_manager' ||
+                   permission.employeeId === req.user.id ||
+                   permission.employee.immediateManagerId === req.user.id ||
+                   permission.employee.areaManagerId === req.user.id;
+
+    if (!canView) {
+      return res.status(403).json({ 
+        error: 'No tienes permisos para ver este permiso' 
+      });
+    }
+
+    res.json({ permission });
+
+  } catch (error) {
+    console.error('Error obteniendo permiso:', error);
+    res.status(500).json({ 
+      error: 'Error interno del servidor' 
+    });
+  }
+};
+
+const updatePermission = async (req, res) => {
+  try {
+    const { permissionId } = req.params;
+    const updates = req.body;
+
+    const permission = await Permission.findByPk(permissionId);
+    
+    if (!permission) {
+      return res.status(404).json({ 
+        error: 'Permiso no encontrado' 
+      });
+    }
+
+    // Solo el empleado puede editar su propio permiso y solo si está pendiente
+    if (permission.employeeId !== req.user.id || 
+        permission.status !== 'pending_immediate_supervisor') {
+      return res.status(403).json({ 
+        error: 'No puedes editar este permiso' 
+      });
+    }
+
+    // Recalcular días totales si se cambian las fechas
+    if (updates.startDate || updates.endDate) {
+      const startDate = updates.startDate ? new Date(updates.startDate) : new Date(permission.startDate);
+      const endDate = updates.endDate ? new Date(updates.endDate) : new Date(permission.endDate);
+      updates.totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+    }
+
+    await permission.update(updates);
+
+    const updatedPermission = await Permission.findByPk(permissionId, {
+      include: [
+        {
+          model: User,
+          as: 'employee',
+          attributes: ['id', 'firstName', 'lastName', 'email', 'employeeId', 'department']
+        }
+      ]
+    });
+
+    res.json({
+      message: 'Permiso actualizado exitosamente',
+      permission: updatedPermission
+    });
+
+  } catch (error) {
+    console.error('Error actualizando permiso:', error);
+    res.status(500).json({ 
+      error: 'Error interno del servidor' 
+    });
+  }
+};
+
+const deletePermission = async (req, res) => {
+  try {
+    const { permissionId } = req.params;
+
+    const permission = await Permission.findByPk(permissionId);
+    
+    if (!permission) {
+      return res.status(404).json({ 
+        error: 'Permiso no encontrado' 
+      });
+    }
+
+    // Solo el empleado puede eliminar su propio permiso y solo si está pendiente
+    if (permission.employeeId !== req.user.id || 
+        permission.status !== 'pending_immediate_supervisor') {
+      return res.status(403).json({ 
+        error: 'No puedes eliminar este permiso' 
+      });
+    }
+
+    await permission.destroy();
+
+    res.json({
+      message: 'Permiso eliminado exitosamente'
+    });
+
+  } catch (error) {
+    console.error('Error eliminando permiso:', error);
+    res.status(500).json({ 
+      error: 'Error interno del servidor' 
+    });
+  }
+};
+
+const getPermissionStats = async (req, res) => {
+  try {
+    const { year = new Date().getFullYear() } = req.query;
+    
+    let whereClause = {};
+    let employeeWhereClause = {};
+
+    // Si no es HR, solo sus propios permisos
+    if (req.user.role !== 'hr') {
+      whereClause.employeeId = req.user.id;
+    }
+
+    // Filtro por año
+    whereClause.startDate = {
+      [Op.gte]: new Date(`${year}-01-01`),
+      [Op.lte]: new Date(`${year}-12-31`)
+    };
+
+    const stats = await Permission.findAll({
+      where: whereClause,
+      include: [
+        {
+          model: User,
+          as: 'employee',
+          attributes: ['id', 'department']
+        }
+      ],
+      attributes: ['type', 'status', 'totalDays', 'startDate']
+    });
+
+    // Procesar estadísticas
+    const result = {
+      totalPermissions: stats.length,
+      byType: {},
+      byStatus: {},
+      byMonth: {},
+      totalDays: 0
+    };
+
+    stats.forEach(permission => {
+      // Por tipo
+      result.byType[permission.type] = (result.byType[permission.type] || 0) + 1;
+      
+      // Por estado
+      result.byStatus[permission.status] = (result.byStatus[permission.status] || 0) + 1;
+      
+      // Por mes
+      const month = new Date(permission.startDate).getMonth() + 1;
+      result.byMonth[month] = (result.byMonth[month] || 0) + 1;
+      
+      // Total días
+      result.totalDays += permission.totalDays;
+    });
+
+    res.json({ stats: result });
+
+  } catch (error) {
+    console.error('Error obteniendo estadísticas:', error);
+    res.status(500).json({ 
+      error: 'Error interno del servidor' 
+    });
+  }
+};
+
 module.exports = {
   createPermission,
   getMyPermissions,
+  getAllPermissions,
+  getPermissionById,
+  updatePermission,
+  deletePermission,
   getPendingApprovals,
-  approveOrRejectPermission
+  approveOrRejectPermission,
+  getPermissionStats
 };

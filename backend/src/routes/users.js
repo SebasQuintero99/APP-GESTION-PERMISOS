@@ -4,9 +4,12 @@ const { body } = require('express-validator');
 const { 
   createUser, 
   getUsers, 
+  getUserById,
+  getManagers,
   updateUser, 
   deleteUser,
-  updateSignature 
+  updateSignature,
+  resetPassword
 } = require('../controllers/userController');
 const { authenticateToken, authorizeRole } = require('../middleware/auth');
 
@@ -66,13 +69,25 @@ const signatureValidation = [
     .withMessage('La firma debe ser una cadena base64 válida')
 ];
 
+// Validaciones para resetear contraseña
+const resetPasswordValidation = [
+  body('newPassword')
+    .isLength({ min: 6 })
+    .withMessage('La nueva contraseña debe tener al menos 6 caracteres')
+    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+    .withMessage('La nueva contraseña debe contener al menos una mayúscula, una minúscula y un número')
+];
+
 // Todas las rutas requieren autenticación
 router.use(authenticateToken);
 
 // Rutas solo para HR
 router.post('/', authorizeRole(['hr']), createUserValidation, createUser);
 router.get('/', authorizeRole(['hr', 'area_manager']), getUsers);
+router.get('/managers', authorizeRole(['hr', 'area_manager']), getManagers);
+router.get('/:userId', authorizeRole(['hr', 'area_manager']), getUserById);
 router.put('/:userId', authorizeRole(['hr']), updateUser);
+router.put('/:userId/reset-password', authorizeRole(['hr']), resetPasswordValidation, resetPassword);
 router.delete('/:userId', authorizeRole(['hr']), deleteUser);
 
 // Ruta para actualizar firma (todos los usuarios autenticados)

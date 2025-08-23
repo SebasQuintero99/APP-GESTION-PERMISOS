@@ -3,8 +3,13 @@ const { body, param } = require('express-validator');
 const { 
   createPermission, 
   getMyPermissions, 
+  getAllPermissions,
+  getPermissionById,
+  updatePermission,
+  deletePermission,
   getPendingApprovals, 
-  approveOrRejectPermission 
+  approveOrRejectPermission,
+  getPermissionStats
 } = require('../controllers/permissionController');
 const { authenticateToken, authorizeRole } = require('../middleware/auth');
 
@@ -73,19 +78,48 @@ const approvalValidation = [
     .withMessage('La firma debe ser una cadena base64 válida')
 ];
 
+// Validaciones para actualizar permiso
+const updatePermissionValidation = [
+  param('permissionId')
+    .isUUID()
+    .withMessage('ID de permiso no válido'),
+  body('type')
+    .optional()
+    .isIn(['vacation', 'medical_leave', 'personal_leave', 'maternity_leave', 'paternity_leave', 'study_permit', 'other'])
+    .withMessage('Tipo de permiso no válido'),
+  body('startDate')
+    .optional()
+    .isISO8601()
+    .withMessage('Fecha de inicio debe ser válida'),
+  body('endDate')
+    .optional()
+    .isISO8601()
+    .withMessage('Fecha de fin debe ser válida'),
+  body('reason')
+    .optional()
+    .isLength({ min: 10, max: 500 })
+    .withMessage('La razón debe tener entre 10 y 500 caracteres')
+];
+
 // Rutas públicas (requieren autenticación)
 router.use(authenticateToken);
 
 // Rutas para empleados
 router.post('/', createPermissionValidation, createPermission);
 router.get('/my-permissions', getMyPermissions);
+router.put('/:permissionId', updatePermissionValidation, updatePermission);
+router.delete('/:permissionId', deletePermission);
 
-// Rutas para supervisores, jefes de área y RRHH
+// Rutas para managers y HR
+router.get('/', authorizeRole(['area_manager', 'hr']), getAllPermissions);
+router.get('/stats', getPermissionStats);
 router.get('/pending-approvals', 
   authorizeRole(['immediate_supervisor', 'area_manager', 'hr']), 
   getPendingApprovals
 );
 
+// Rutas específicas por ID (debe ir después de las rutas con nombres específicos)
+router.get('/:permissionId', getPermissionById);
 router.put('/:permissionId/approve', 
   authorizeRole(['immediate_supervisor', 'area_manager', 'hr']), 
   approvalValidation, 

@@ -1,7 +1,7 @@
-// src/controllers/authController.js
 const jwt = require('jsonwebtoken');
 const { User } = require('../models');
 const { validationResult } = require('express-validator');
+const { Op } = require('sequelize');
 
 const generateToken = (userId) => {
   return jwt.sign(
@@ -91,6 +91,7 @@ const getProfile = async (req, res) => {
   }
 };
 
+
 const changePassword = async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -127,8 +128,27 @@ const changePassword = async (req, res) => {
   }
 };
 
+const logout = async (req, res) => {
+  try {
+    // En una implementación más robusta, aquí se podría:
+    // 1. Añadir el token a una blacklist en Redis
+    // 2. Invalidar el token en la base de datos
+    // Por ahora, simplemente confirmamos el logout
+    
+    res.json({
+      message: 'Sesión cerrada exitosamente'
+    });
+  } catch (error) {
+    console.error('Error en logout:', error);
+    res.status(500).json({ 
+      error: 'Error interno del servidor' 
+    });
+  }
+};
+
 module.exports = {
   login,
   getProfile,
-  changePassword
+  changePassword,
+  logout
 };

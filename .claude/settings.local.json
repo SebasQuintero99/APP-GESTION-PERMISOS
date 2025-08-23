@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker-compose:*)",
+      "Bash(docker exec:*)",
+      "Bash(curl:*)",
+      "Bash(npm install:*)",
+      "Bash(npx tailwindcss init:*)",
+      "Bash(npm start)",
+      "Bash(timeout 15 docker-compose logs -f frontend)",
+      "Bash(timeout 30 docker-compose logs -f frontend)",
+      "Bash(timeout 45 docker-compose logs -f frontend)",
+      "Bash(timeout 20 docker-compose logs -f frontend)",
+      "Bash(timeout 25 docker-compose logs -f frontend)",
+      "Bash(timeout 40 docker-compose logs -f frontend)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
